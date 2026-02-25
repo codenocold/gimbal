@@ -1,0 +1,9 @@
+device STM32G431CB
+si 1
+speed 4000
+h
+loadbin build/dmtp_boot.bin 0x08000000
+verifybin build/dmtp_boot.bin 0x08000000
+r
+g
+q

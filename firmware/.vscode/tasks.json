@@ -1,0 +1,62 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "group": "build",
+            "type": "shell",
+            "command": "make -j6",
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "TARGET": "${config:make.target}",
+                    "BUILD_DIR": "${config:make.buildDir}",
+                }
+            }
+        },
+        {
+            "label": "Clean",
+            "group": "build",
+            "type": "shell",
+            "command": "make clean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Load",
+            "type": "shell",
+            "group": "build",
+            "command": [
+                "JLink -NoGui 1 -CommandFile flash.jlink"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Build + Load",
+            "group": "build",
+            "type": "shell",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Build",
+                "Load"
+            ]
+        },
+        {
+            "label": "nSWBOOT0=0",
+            "type": "shell",
+            "group": "build",
+            "command": [
+                "STM32_Programmer_CLI.exe -c port=JLINK -ob nSWBOOT0=0",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+    ]
+}

@@ -81,12 +81,10 @@ void IMU_Update(EKF_t *ekf, float gx, float gy, float gz, float ax, float ay, fl
     // 机体坐标系下的重力方向
     float gx_b = 2 * (q1 * q3 - q0 * q2);
     float gy_b = 2 * (q0 * q1 + q2 * q3);
-    float gz_b = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
 
     // 误差
     float ex = ax - gx_b;
     float ey = ay - gy_b;
-    float ez = az - gz_b;
 
     // 比例增益（调这个！）
     const float Kp = 0.2f;    // 姿态修正

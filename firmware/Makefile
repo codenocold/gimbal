@@ -57,7 +57,8 @@ Source/aes.c \
 Source/dfu.c \
 Source/com.c \
 Source/mpu6050.c \
-Source/imu.c
+Source/imu.c \
+Source/ecl_attitude_ekf.c
 
 # ASM sources
 ASM_SOURCES =  \

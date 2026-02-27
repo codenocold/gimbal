@@ -22,13 +22,14 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "com.h"
-#include "soc.h"
 #include "dfu.h"
-#include "util.h"
-#include "flash.h"
+#include "ecl_attitude_ekf.h"
 #include "eeprom_emul.h"
-#include "mpu6050.h"
+#include "flash.h"
 #include "imu.h"
+#include "mpu6050.h"
+#include "soc.h"
+#include "util.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,10 +105,36 @@ int main(void)
 
     MPU6050_init();
 
-    EKF_t      ekf;
-    Attitude_t att;
+    // 创建EKF实例
+    EclAttitudeEKF ekf;
 
-    IMU_Init(&ekf);
+    // 创建EKF配置
+    EclConfig config;
+    ecl_config_set_default(&config);
+
+    // 自定义配置
+    config.gyro_noise            = 0.01f; // 陀螺仪噪声
+    config.accel_noise           = 0.1f;  // 加速度计噪声
+    config.mag_heading_noise     = 0.3f;  // 磁力计航向噪声
+    config.initial_attitude_std  = 0.5f;  // 初始姿态不确定性
+    config.initial_gyro_bias_std = 0.1f;  // 初始零偏不确定性
+
+    // 初始化EKF
+    ecl_ekf_init(&ekf, &config);
+
+    // 启动EKF
+    uint64_t timestamp        = 0;
+    float    initial_accel[3] = {0.0f, 0.0f, -9.81f}; // 假设初始水平
+
+    if (!ecl_ekf_start(&ekf, timestamp, initial_accel)) {
+        DEBUG("EKF初始化失败！\n");
+        return -1;
+    }
+
+    DEBUG("EKF初始化成功！\n");
+
+    // 启用磁力计融合
+    ecl_ekf_enable_mag_fusion(&ekf, 0);
 
     uint32_t tick = 0;
 
@@ -120,13 +147,24 @@ int main(void)
             int16_t acce_x, acce_y, acce_z, gyro_x, gyro_y, gyro_z, temper;
             MPU6050_read_raw_data(&acce_x, &acce_y, &acce_z, &gyro_x, &gyro_y, &gyro_z, &temper);
 
-            float gx = gyro_x * 0.0152587890625f; // deg/s
-            float gy = gyro_y * 0.0152587890625f; // deg/s
-            float gz = gyro_z * 0.0152587890625f; // deg/s
-            IMU_Update(&ekf, gx, gy, gz, acce_x, acce_y, acce_z, 0.005f);
-            IMU_GetAttitude(&ekf, &att);
+            timestamp += 5000; // 5ms
 
-            DEBUG("%d %d %d\n", (int) (att.roll * 1), (int) (att.pitch * 1), (int) (att.yaw * 1));
+            float gyro[3], accel[3], mag[3];
+            gyro[0]  = (float) gyro_x * 1000.0f / 65536.0f * M_PI / 180.0f; // rad/s
+            gyro[1]  = (float) gyro_y * 1000.0f / 65536.0f * M_PI / 180.0f; // rad/s
+            gyro[2]  = (float) gyro_z * 1000.0f / 65536.0f * M_PI / 180.0f; // rad/s
+            accel[0] = (float) acce_x * 4.0f / 65536.0f * 9.80665f;         // m/s^2
+            accel[1] = (float) acce_y * 4.0f / 65536.0f * 9.80665f;         // m/s^2
+            accel[2] = (float) acce_z * 4.0f / 65536.0f * 9.80665f;         // m/s^2
+
+            ecl_ekf_set_imu_data(&ekf, gyro, accel, timestamp);
+            ecl_ekf_set_mag_data(&ekf, mag, timestamp);
+            ecl_ekf_update(&ekf);
+
+            float roll, pitch, yaw;
+            ecl_ekf_get_euler_angles(&ekf, &roll, &pitch, &yaw);
+
+            DEBUG("%d %d %d\n", (int) (roll * 1), (int) (pitch * 1), (int) (yaw * 1));
         }
     }
 

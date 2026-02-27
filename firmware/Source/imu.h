@@ -10,6 +10,9 @@ typedef struct
     float Q[4][4]; // 过程噪声协方差
     float R[3][3]; // 测量噪声协方差
     float dt;      // 采样周期 (单位: s)
+    float acc_ref[3];          // 低通重力参考向量 (机体系, 单位向量)
+    uint8_t acc_ref_valid;     // 参考向量是否已初始化
+    uint8_t acc_reject_cooldown; // 加速度观测拒绝冷却计数
 } EKF_t;
 
 // 初始化 EKF 结构体

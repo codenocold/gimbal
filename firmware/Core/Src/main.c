@@ -29,6 +29,7 @@
 #include "mpu6050.h"
 #include "soc.h"
 #include "util.h"
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -105,11 +106,10 @@ int main(void)
     MPU6050_init();
 
     EKF_t ekf;
-    float r, p, y;
 
     // 假设采样频率为 100Hz (dt = 0.01s)
     // 过程噪声设为 0.001，测量噪声设为 0.01 (根据实际抖动调整)
-    EKF_Init(&ekf, 0.005f, 0.001f, 0.01f);
+    EKF_Init(&ekf, 0.005f, 0.001f, 0.5f);
 
     uint32_t tick = 0;
 
@@ -122,17 +122,22 @@ int main(void)
             int16_t acce_x, acce_y, acce_z, gyro_x, gyro_y, gyro_z, temper;
             MPU6050_read_raw_data(&acce_x, &acce_y, &acce_z, &gyro_x, &gyro_y, &gyro_z, &temper);
 
-            float gx = gyro_x * 0.0152587890625f * 0.017453292519943295f; // deg/s to rad/s
-            float gy = gyro_y * 0.0152587890625f * 0.017453292519943295f; // deg/s to rad/s
-            float gz = gyro_z * 0.0152587890625f * 0.017453292519943295f; // deg/s to rad/s
+            float gyro[3], accel[3];
+            gyro[0]  = (float) gyro_x * 1000.0f / 65536.0f * M_PI / 180.0f; // rad/s
+            gyro[1]  = (float) gyro_y * 1000.0f / 65536.0f * M_PI / 180.0f; // rad/s
+            gyro[2]  = (float) gyro_z * 1000.0f / 65536.0f * M_PI / 180.0f; // rad/s
+            accel[0] = (float) acce_x * 4.0f / 65536.0f * 9.80665f;         // m/s^2
+            accel[1] = (float) acce_y * 4.0f / 65536.0f * 9.80665f;         // m/s^2
+            accel[2] = (float) acce_z * 4.0f / 65536.0f * 9.80665f;         // m/s^2
 
             // 2. 更新 EKF
-            EKF_Update(&ekf, gx, gy, gz, acce_x, acce_y, acce_z);
+            EKF_Update(&ekf, gyro[0], gyro[1], gyro[2], accel[0], accel[1], accel[2]);
 
             // 3. 读取欧拉角
+            float r, p, y;
             EKF_GetEulerAngles(&ekf, &r, &p, &y);
 
-            DEBUG("%d %d %d\n", (int) (r * 100), (int) (p * 100), (int) (y * 100));
+            DEBUG("%d %d %d\n", (int) (r * 1), (int) (p * 1), (int) (y * 1));
         }
     }
 

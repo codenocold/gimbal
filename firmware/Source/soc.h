@@ -21,9 +21,11 @@ extern "C" {
     // clang-format off
     #include "SEGGER_RTT.h"
     #define DEBUG(format, ...) SEGGER_RTT_printf(0, format, ##__VA_ARGS__);
+    inline void DEBUG_PLOT(float f1, float f2, float f3) { float value[3] = {f1, f2, f3}; SEGGER_RTT_Write(1, &value, sizeof(value)); }
     // clang-format on
 #else
     #define DEBUG(format, ...)
+    #define DEBUG_PLOT(value)
 #endif
 
 #define SYSTEM_CLOCK    160000000

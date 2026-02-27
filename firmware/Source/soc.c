@@ -41,7 +41,12 @@ static uint8_t          m_rx_buffer_1[UART_RX_BUFFER_SIZE];
 int32_t soc_init(void)
 {
 #ifdef __DEBUG__
+    // rtt init
     SEGGER_RTT_Init();
+
+    // JScope rtt init
+    static char JS_RTT_UpBuffer[512];
+    SEGGER_RTT_ConfigUpBuffer(1, "JScope_f4f4f4", &JS_RTT_UpBuffer[0], sizeof(JS_RTT_UpBuffer), SEGGER_RTT_MODE_NO_BLOCK_SKIP);
 #endif
 
     // systick init

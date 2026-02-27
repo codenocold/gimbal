@@ -27,8 +27,8 @@ int32_t MPU6050_init(void)
     // Sample Rate Divider
     ret += write_register(0x19, 0x00);
 
-    // Set DLPF
-    ret += write_register(0x1A, 0x06);
+    // Set DLPF BW = 180Hz
+    ret += write_register(0x1A, 0x01);
 
     // (+-500 deg/s)
     ret += write_register(0x1B, 0x08);
@@ -111,7 +111,7 @@ static int32_t write_register(uint8_t reg, uint8_t data)
 
 //---------------------------------------------------------------------------------------------------------------
 // I2C
-#define IIC_DELAY_TICK 30
+#define IIC_DELAY_TICK 40
 #define SCL_H          HAL_GPIO_WritePin(IMU_SCL_GPIO_Port, IMU_SCL_Pin, GPIO_PIN_SET)
 #define SCL_L          HAL_GPIO_WritePin(IMU_SCL_GPIO_Port, IMU_SCL_Pin, GPIO_PIN_RESET)
 #define SDA_H          HAL_GPIO_WritePin(IMU_SDA_GPIO_Port, IMU_SDA_Pin, GPIO_PIN_SET)

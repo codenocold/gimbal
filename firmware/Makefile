@@ -57,7 +57,11 @@ Source/aes.c \
 Source/dfu.c \
 Source/com.c \
 Source/mpu6050.c \
-Source/imu.c
+Source/imu.c \
+Source/Fusion/FusionAhrs.c \
+Source/Fusion/FusionBias.c \
+Source/Fusion/FusionCompass.c \
+
 
 # ASM sources
 ASM_SOURCES =  \
@@ -129,7 +133,8 @@ C_INCLUDES =  \
 -ISource \
 -ISource/RTT \
 -ISource/eeprom/core \
--ISource/eeprom/port
+-ISource/eeprom/port \
+-ISource/Fusion \
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections

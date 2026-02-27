@@ -22,13 +22,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "com.h"
-#include "soc.h"
 #include "dfu.h"
-#include "util.h"
-#include "flash.h"
 #include "eeprom_emul.h"
-#include "mpu6050.h"
+#include "flash.h"
 #include "imu.h"
+#include "mpu6050.h"
+#include "soc.h"
+#include "util.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,10 +104,12 @@ int main(void)
 
     MPU6050_init();
 
-    EKF_t      ekf;
-    Attitude_t att;
+    EKF_t ekf;
+    float r, p, y;
 
-    IMU_Init(&ekf);
+    // 假设采样频率为 100Hz (dt = 0.01s)
+    // 过程噪声设为 0.001，测量噪声设为 0.01 (根据实际抖动调整)
+    EKF_Init(&ekf, 0.005f, 0.001f, 0.01f);
 
     uint32_t tick = 0;
 
@@ -120,13 +122,17 @@ int main(void)
             int16_t acce_x, acce_y, acce_z, gyro_x, gyro_y, gyro_z, temper;
             MPU6050_read_raw_data(&acce_x, &acce_y, &acce_z, &gyro_x, &gyro_y, &gyro_z, &temper);
 
-            float gx = gyro_x * 0.0152587890625f; // deg/s
-            float gy = gyro_y * 0.0152587890625f; // deg/s
-            float gz = gyro_z * 0.0152587890625f; // deg/s
-            IMU_Update(&ekf, gx, gy, gz, acce_x, acce_y, acce_z, 0.005f);
-            IMU_GetAttitude(&ekf, &att);
+            float gx = gyro_x * 0.0152587890625f * 0.017453292519943295f; // deg/s to rad/s
+            float gy = gyro_y * 0.0152587890625f * 0.017453292519943295f; // deg/s to rad/s
+            float gz = gyro_z * 0.0152587890625f * 0.017453292519943295f; // deg/s to rad/s
 
-            DEBUG("%d %d %d\n", (int) (att.roll * 1), (int) (att.pitch * 1), (int) (att.yaw * 1));
+            // 2. 更新 EKF
+            EKF_Update(&ekf, gx, gy, gz, acce_x, acce_y, acce_z);
+
+            // 3. 读取欧拉角
+            EKF_GetEulerAngles(&ekf, &r, &p, &y);
+
+            DEBUG("%d %d %d\n", (int) (r * 100), (int) (p * 100), (int) (y * 100));
         }
     }
 

@@ -5,27 +5,20 @@
 
 typedef struct
 {
-    float q0, q1, q2, q3;            // 四元数
-    float gx_bias, gy_bias, gz_bias; // 陀螺零偏
+    float q[4];    // 状态向量：四元数 [q0, q1, q2, q3]
+    float P[4][4]; // 状态协方差矩阵
+    float Q[4][4]; // 过程噪声协方差
+    float R[3][3]; // 测量噪声协方差
+    float dt;      // 采样周期 (单位: s)
 } EKF_t;
 
-typedef struct
-{
-    float pitch;
-    float roll;
-    float yaw;
-} Attitude_t;
+// 初始化 EKF 结构体
+void EKF_Init(EKF_t *ekf, float dt, float q_noise, float r_noise);
 
-void IMU_Init(EKF_t *ekf);
-void IMU_Update(EKF_t *ekf,
-                float  gx,
-                float  gy,
-                float  gz, // 陀螺 deg/s
-                float  ax,
-                float  ay,
-                float  az, // 加速度
-                float  dt); // 时间间隔 s
+// EKF 核心更新函数：传入陀螺仪(rad/s)和加速度计(m/s^2 或 g)
+void EKF_Update(EKF_t *ekf, float gx, float gy, float gz, float ax, float ay, float az);
 
-void IMU_GetAttitude(EKF_t *ekf, Attitude_t *att);
+// 获取欧拉角 (单位: 度)
+void EKF_GetEulerAngles(EKF_t *ekf, float *roll, float *pitch, float *yaw);
 
 #endif /* __IMU_H__ */

@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "EKF.h"
 #include "Fusion.h"
 #include "com.h"
 #include "dfu.h"
@@ -106,20 +107,21 @@ int main(void)
 
     MPU6050_init();
 
-    FusionAhrs ahrs;
-    FusionAhrsInitialise(&ahrs);
+    // In The Main Function:
+    ekf_t ekf;
+    float euler_ekf[3];
+    EKF_init(&ekf, 1, 0, 0, 0.1, 1, 100);
 
-    // Set AHRS settings
-    const FusionAhrsSettings settings = {
-        .convention            = FusionConventionNwu,
-        .gain                  = 0.5f,
-        .gyroscopeRange        = 500.0f, /* replace with actual gyroscope range */
-        .accelerationRejection = 8.0f,
-        .magneticRejection     = 8.0f,
-        .recoveryTriggerPeriod = 5 * 200, /* 5 seconds */
-    };
-
-    FusionAhrsSetSettings(&ahrs, &settings);
+    // // Set AHRS settings
+    // const FusionAhrsSettings settings = {
+    //     .convention            = FusionConventionNwu,
+    //     .gain                  = 0.5f,
+    //     .gyroscopeRange        = 500.0f, /* replace with actual gyroscope range */
+    //     .accelerationRejection = 8.0f,
+    //     .magneticRejection     = 8.0f,
+    //     .recoveryTriggerPeriod = 5 * 200, /* 5 seconds */
+    // };
+    // FusionAhrsSetSettings(&ahrs, &settings);
 
     uint32_t tick = 0;
     while (1) {
@@ -140,30 +142,21 @@ int main(void)
             // DEBUG("acce: %d %d %d, gyro: %d %d %d, temper: %d\n", acce_x, acce_y, acce_z, gyro_x, gyro_y, gyro_z, temper);
 
             float gyro[3], accel[3];
-            gyro[0]  = (float) gyro_x * 1000.0f / 65536.0f; // deg/s
-            gyro[1]  = (float) gyro_y * 1000.0f / 65536.0f; // deg/s
-            gyro[2]  = (float) gyro_z * 1000.0f / 65536.0f; // deg/s
-            accel[0] = (float) acce_x * 4.0f / 65536.0f;    // g
-            accel[1] = (float) acce_y * 4.0f / 65536.0f;    // g
-            accel[2] = (float) acce_z * 4.0f / 65536.0f;    // g
+            gyro[0]  = (float) gyro_x * 1000.0f / 65536.0f * M_PI / 180.0f; // deg/s to rad/s
+            gyro[1]  = (float) gyro_y * 1000.0f / 65536.0f * M_PI / 180.0f; // deg/s to rad/s
+            gyro[2]  = (float) gyro_z * 1000.0f / 65536.0f * M_PI / 180.0f; // deg/s to rad/s
+            accel[0] = (float) acce_x * 4.0f / 65536.0f;                    // g
+            accel[1] = (float) acce_y * 4.0f / 65536.0f;                    // g
+            accel[2] = (float) acce_z * 4.0f / 65536.0f;                    // g
 
-            // Read sensors (replace with actual sensor data)
-            FusionVector gyroscope;
-            gyroscope.array[0] = gyro[0];
-            gyroscope.array[1] = gyro[1];
-            gyroscope.array[2] = gyro[2];
-            FusionVector accelerometer;
-            accelerometer.array[0] = accel[0];
-            accelerometer.array[1] = accel[1];
-            accelerometer.array[2] = accel[2];
+            EKF_update(&ekf, euler_ekf, accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], 1, 0, 0, 0.005f);
+            // Convert radians to degrees
+            float roll_deg  = euler_ekf[0] * 180.0f / 3.14159265f;
+            float pitch_deg = euler_ekf[1] * 180.0f / 3.14159265f;
+            float yaw_deg   = euler_ekf[2] * 180.0f / 3.14159265f;
 
-            // Update AHRS algorithm
-            FusionAhrsUpdateNoMagnetometer(&ahrs, gyroscope, accelerometer, 0.005f);
+            DEBUG_PLOT(roll_deg, pitch_deg, yaw_deg);
 
-            // Print Euler angles
-            const FusionEuler euler = FusionQuaternionToEuler(FusionAhrsGetQuaternion(&ahrs));
-
-            DEBUG_PLOT(euler.angle.roll, euler.angle.pitch, euler.angle.yaw);
             // DEBUG("%d %d %d\n", (int) (euler.angle.roll * 1), (int) (euler.angle.pitch * 1), (int) (euler.angle.yaw * 1));
             // DEBUG("%d %d %d\n", (int) (earth.axis.x * 10), (int) (earth.axis.y * 10), (int) (earth.axis.z * 10));
         }

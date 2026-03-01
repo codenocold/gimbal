@@ -89,7 +89,10 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     float   wy;
     float   wz;
     float   q_norm;
+    float   gyro_norm;
+    float   bias_track;
     uint8_t mag_valid;
+    uint8_t is_static;
     uint8_t mat_error;
 
     // Normalization
@@ -122,6 +125,8 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     wx = p - bgx;
     wy = q - bgy;
     wz = r - bgz;
+    gyro_norm = sqrtf(p * p + q * q + r * r);
+    is_static = (!mag_valid) && (fabsf(G - 1.0f) < 0.15f) && (gyro_norm < 0.35f);
 
     for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
         for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
@@ -343,6 +348,16 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
         ekf->x[1] /= q_norm;
         ekf->x[2] /= q_norm;
         ekf->x[3] /= q_norm;
+    }
+
+    if (is_static) {
+        bias_track = 2.0f * dt;
+        if (bias_track > 0.05f) {
+            bias_track = 0.05f;
+        }
+        ekf->x[4] += bias_track * (p - ekf->x[4]);
+        ekf->x[5] += bias_track * (q - ekf->x[5]);
+        ekf->x[6] += bias_track * (r - ekf->x[6]);
     }
 
     // P = Pp - K*H*Pp;

@@ -246,10 +246,10 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     accel_r_scale    = 1.0f;
     use_accel_update = 1u;
 
-    if (dot_ag < 0.1f) {
+    if (dot_ag < 0.8f) {
         use_accel_update = 0u;
     } else {
-        accel_r_scale = 1.0f + (1.0f - dot_ag) * 100.0f;
+        accel_r_scale = 1.0f + (1.0f - dot_ag) * 8000.0f;
     }
 
     H[0][0] = -q2;

@@ -110,7 +110,7 @@ int main(void)
     // In The Main Function:
     ekf_t ekf;
     float euler_ekf[3];
-    EKF_init(&ekf, 1, 0, 0, 0.1f, 0.0001f, 1.0f, 100.0f);
+    EKF_init(&ekf, 0, 0, 0, 0.1f, 0.0001f, 1.0f, 100.0f, 0u);
 
     // // Set AHRS settings
     // const FusionAhrsSettings settings = {
@@ -134,12 +134,12 @@ int main(void)
             int16_t acce_x, acce_y, acce_z, gyro_x, gyro_y, gyro_z, temper;
             MPU6050_read_raw_data(&acce_x, &acce_y, &acce_z, &gyro_x, &gyro_y, &gyro_z, &temper);
 
-            acce_x -= 1090;
-            acce_y += 112;
-            acce_z -= 714;
-            gyro_x += 565;
-            gyro_y -= 152;
-            gyro_z -= 59;
+            // acce_x -= 1090;
+            // acce_y += 112;
+            // acce_z -= 714;
+            // gyro_x += 565;
+            // gyro_y -= 152;
+            // gyro_z -= 59;
             // DEBUG("acce: %d %d %d, gyro: %d %d %d, temper: %d\n", acce_x, acce_y, acce_z, gyro_x, gyro_y, gyro_z, temper);
 
             float gyro[3], accel[3];
@@ -150,7 +150,7 @@ int main(void)
             accel[1] = (float) acce_y * 4.0f / 65536.0f;                    // g
             accel[2] = (float) acce_z * 4.0f / 65536.0f;                    // g
 
-            EKF_update(&ekf, euler_ekf, accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], 0.0f, 0.0f, 0.0f, 0.005f, 0u);
+            EKF_update(&ekf, euler_ekf, accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], 0.0f, 0.0f, 0.0f, 0.005f);
             // Convert radians to degrees
             float roll_deg  = euler_ekf[0] * 180.0f / 3.14159265f;
             float pitch_deg = euler_ekf[1] * 180.0f / 3.14159265f;
@@ -162,9 +162,6 @@ int main(void)
                 bias_print_tick = soc_get_tick();
                 DEBUG("gyro_bias(rad/s): %.5f %.5f %.5f\n", ekf.x[4], ekf.x[5], ekf.x[6]);
             }
-
-            // DEBUG("%d %d %d\n", (int) (euler.angle.roll * 1), (int) (euler.angle.pitch * 1), (int) (euler.angle.yaw * 1));
-            // DEBUG("%d %d %d\n", (int) (earth.axis.x * 10), (int) (earth.axis.y * 10), (int) (earth.axis.z * 10));
         }
     }
 

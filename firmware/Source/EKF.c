@@ -8,7 +8,7 @@
 #include "EKF.h"
 #include "math.h"
 
-void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, float N_Q_bias, float N_P, float N_R)
+void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, float N_Q_bias, float N_P, float N_R, uint8_t use_mag)
 {
     // Initialization:
     // Prediction error covariance matrix
@@ -53,13 +53,14 @@ void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, f
     ekf->x[6] = 0;
 
     // Normalize Reference Magnetic Vector
-    float M     = sqrtf(ref_mx * ref_mx + ref_my * ref_my + ref_mz * ref_mz);
-    ekf->ref_mx = ref_mx / M;
-    ekf->ref_my = ref_my / M;
-    ekf->ref_mz = ref_mz / M;
+    float M      = sqrtf(ref_mx * ref_mx + ref_my * ref_my + ref_mz * ref_mz);
+    ekf->ref_mx  = ref_mx / M;
+    ekf->ref_my  = ref_my / M;
+    ekf->ref_mz  = ref_mz / M;
+    ekf->use_mag = (use_mag != 0u) ? 1u : 0u;
 }
 
-void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt, uint8_t use_mag)
+void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt)
 {
     // Variable Definitions
     float   F[EKF_STATE_DIM][EKF_STATE_DIM]; // Jacobian matrix of F
@@ -91,20 +92,18 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     float   q_norm;
     float   gyro_norm;
     float   bias_track;
-    uint8_t mag_valid;
     uint8_t is_static;
     uint8_t mat_error;
 
     // Normalization
     G = sqrtf(ax * ax + ay * ay + az * az);
-    M = sqrtf(mx * mx + my * my + mz * mz);
     if (G > 0.0f) {
         ax = ax / G;
         ay = ay / G;
         az = az / G;
     }
-    mag_valid = (use_mag != 0u) && (M > 1e-6f);
-    if (mag_valid) {
+    if (ekf->use_mag != 0u) {
+        M  = sqrtf(mx * mx + my * my + mz * mz);
         mx = mx / M;
         my = my / M;
         mz = mz / M;
@@ -122,11 +121,11 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     bgy = ekf->x[5];
     bgz = ekf->x[6];
 
-    wx = p - bgx;
-    wy = q - bgy;
-    wz = r - bgz;
+    wx        = p - bgx;
+    wy        = q - bgy;
+    wz        = r - bgz;
     gyro_norm = sqrtf(p * p + q * q + r * r);
-    is_static = (!mag_valid) && (fabsf(G - 1.0f) < 0.15f) && (gyro_norm < 0.35f);
+    is_static = (ekf->use_mag == 0u) && (fabsf(G - 1.0f) < 0.15f) && (gyro_norm < 0.35f);
 
     for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
         for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
@@ -233,7 +232,7 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     H[2][2] = -q2;
     H[2][3] = q3;
 
-    if (mag_valid) {
+    if (ekf->use_mag != 0u) {
         H[3][0] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
         H[3][1] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
         H[3][2] = -q2 * ekf->ref_mx + q1 * ekf->ref_my - q0 * ekf->ref_mz;
@@ -314,7 +313,7 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     z[0] = ax;
     z[1] = ay;
     z[2] = az;
-    if (mag_valid) {
+    if (ekf->use_mag != 0u) {
         z[3] = mx;
         z[4] = my;
         z[5] = mz;

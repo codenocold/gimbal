@@ -91,8 +91,17 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     float   wz;
     float   q_norm;
     float   gyro_norm;
+    float   accel_tilt_error;
+    float   accel_tilt_reliability;
+    float   accel_reliability;
+    float   accel_r_scale;
+    float   gpx;
+    float   gpy;
+    float   gpz;
+    float   dot_ag;
     float   bias_track;
     uint8_t is_static;
+    uint8_t use_accel_update;
     uint8_t mat_error;
 
     // Normalization
@@ -101,7 +110,12 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
         ax = ax / G;
         ay = ay / G;
         az = az / G;
+    } else {
+        ax = 0.0f;
+        ay = 0.0f;
+        az = 0.0f;
     }
+
     if (ekf->use_mag != 0u) {
         M  = sqrtf(mx * mx + my * my + mz * mz);
         mx = mx / M;
@@ -125,7 +139,7 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     wy        = q - bgy;
     wz        = r - bgz;
     gyro_norm = sqrtf(p * p + q * q + r * r);
-    is_static = (ekf->use_mag == 0u) && (fabsf(G - 1.0f) < 0.15f) && (gyro_norm < 0.35f);
+    is_static = (ekf->use_mag == 0u) && (fabsf(G - 1.0f) < EKF_STATIC_ACCEL_ERR_TH) && (gyro_norm < EKF_STATIC_GYRO_NORM_TH);
 
     for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
         for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
@@ -217,6 +231,27 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     q2 = ekf->xp[2];
     q3 = ekf->xp[3];
 
+    gpx = 2.0f * (q1 * q3 - q0 * q2);
+    gpy = 2.0f * (q0 * q1 + q2 * q3);
+    gpz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
+
+    dot_ag = ax * gpx + ay * gpy + az * gpz;
+    if (dot_ag > 1.0f) {
+        dot_ag = 1.0f;
+    }
+    if (dot_ag < -1.0f) {
+        dot_ag = -1.0f;
+    }
+
+    accel_r_scale    = 1.0f;
+    use_accel_update = 1u;
+
+    if (dot_ag < 0.1f) {
+        use_accel_update = 0u;
+    } else {
+        accel_r_scale = 1.0f + (1.0f - dot_ag) * 100.0f;
+    }
+
     H[0][0] = -q2;
     H[0][1] = q3;
     H[0][2] = -q0;
@@ -231,6 +266,23 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     H[2][1] = -q1;
     H[2][2] = -q2;
     H[2][3] = q3;
+
+    if (use_accel_update == 0u) {
+        H[0][0] = 0.0f;
+        H[0][1] = 0.0f;
+        H[0][2] = 0.0f;
+        H[0][3] = 0.0f;
+
+        H[1][0] = 0.0f;
+        H[1][1] = 0.0f;
+        H[1][2] = 0.0f;
+        H[1][3] = 0.0f;
+
+        H[2][0] = 0.0f;
+        H[2][1] = 0.0f;
+        H[2][2] = 0.0f;
+        H[2][3] = 0.0f;
+    }
 
     if (ekf->use_mag != 0u) {
         H[3][0] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
@@ -273,7 +325,11 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     // H*Pp*H' + R
     for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
         for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
-            HPpHt[i][j] = HPpHt[i][j] + ekf->R[i][j]; // S
+            if ((i == j) && (i < 3)) {
+                HPpHt[i][j] = HPpHt[i][j] + ekf->R[i][j] * accel_r_scale; // S
+            } else {
+                HPpHt[i][j] = HPpHt[i][j] + ekf->R[i][j]; // S
+            }
         }
     }
 
@@ -313,6 +369,11 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     z[0] = ax;
     z[1] = ay;
     z[2] = az;
+    if (use_accel_update == 0u) {
+        z[0] = 0.0f;
+        z[1] = 0.0f;
+        z[2] = 0.0f;
+    }
     if (ekf->use_mag != 0u) {
         z[3] = mx;
         z[4] = my;
@@ -350,9 +411,9 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     }
 
     if (is_static) {
-        bias_track = 2.0f * dt;
-        if (bias_track > 0.05f) {
-            bias_track = 0.05f;
+        bias_track = EKF_BIAS_TRACK_GAIN * dt;
+        if (bias_track > EKF_BIAS_TRACK_GAIN_MAX) {
+            bias_track = EKF_BIAS_TRACK_GAIN_MAX;
         }
         ekf->x[4] += bias_track * (p - ekf->x[4]);
         ekf->x[5] += bias_track * (q - ekf->x[5]);

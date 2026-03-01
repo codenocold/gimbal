@@ -59,7 +59,7 @@ void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, f
     ekf->ref_mz = ref_mz / M;
 }
 
-void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt)
+void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt, uint8_t use_mag)
 {
     // Variable Definitions
     float   F[EKF_STATE_DIM][EKF_STATE_DIM]; // Jacobian matrix of F
@@ -89,6 +89,7 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     float   wy;
     float   wz;
     float   q_norm;
+    uint8_t mag_valid;
     uint8_t mat_error;
 
     // Normalization
@@ -99,10 +100,15 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
         ay = ay / G;
         az = az / G;
     }
-    if (M > 0.0f) {
+    mag_valid = (use_mag != 0u) && (M > 1e-6f);
+    if (mag_valid) {
         mx = mx / M;
         my = my / M;
         mz = mz / M;
+    } else {
+        mx = 0.0f;
+        my = 0.0f;
+        mz = 0.0f;
     }
 
     q0  = ekf->x[0];
@@ -222,20 +228,22 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     H[2][2] = -q2;
     H[2][3] = q3;
 
-    H[3][0] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
-    H[3][1] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
-    H[3][2] = -q2 * ekf->ref_mx + q1 * ekf->ref_my - q0 * ekf->ref_mz;
-    H[3][3] = -q3 * ekf->ref_mx + q0 * ekf->ref_my + q1 * ekf->ref_mz;
+    if (mag_valid) {
+        H[3][0] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
+        H[3][1] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
+        H[3][2] = -q2 * ekf->ref_mx + q1 * ekf->ref_my - q0 * ekf->ref_mz;
+        H[3][3] = -q3 * ekf->ref_mx + q0 * ekf->ref_my + q1 * ekf->ref_mz;
 
-    H[4][0] = -q3 * ekf->ref_mx + q0 * ekf->ref_my + q1 * ekf->ref_mz;
-    H[4][1] = q2 * ekf->ref_mx - q1 * ekf->ref_my + q0 * ekf->ref_mz;
-    H[4][2] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
-    H[4][3] = -q0 * ekf->ref_mx - q3 * ekf->ref_my + q2 * ekf->ref_mz;
+        H[4][0] = -q3 * ekf->ref_mx + q0 * ekf->ref_my + q1 * ekf->ref_mz;
+        H[4][1] = q2 * ekf->ref_mx - q1 * ekf->ref_my + q0 * ekf->ref_mz;
+        H[4][2] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
+        H[4][3] = -q0 * ekf->ref_mx - q3 * ekf->ref_my + q2 * ekf->ref_mz;
 
-    H[5][0] = q2 * ekf->ref_mx - q1 * ekf->ref_my + q0 * ekf->ref_mz;
-    H[5][1] = q3 * ekf->ref_mx - q0 * ekf->ref_my - q1 * ekf->ref_mz;
-    H[5][2] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
-    H[5][3] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
+        H[5][0] = q2 * ekf->ref_mx - q1 * ekf->ref_my + q0 * ekf->ref_mz;
+        H[5][1] = q3 * ekf->ref_mx - q0 * ekf->ref_my - q1 * ekf->ref_mz;
+        H[5][2] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
+        H[5][3] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
+    }
 
     // S = (H*Pp*H' + R);
     // H*Pp
@@ -301,9 +309,15 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     z[0] = ax;
     z[1] = ay;
     z[2] = az;
-    z[3] = mx;
-    z[4] = my;
-    z[5] = mz;
+    if (mag_valid) {
+        z[3] = mx;
+        z[4] = my;
+        z[5] = mz;
+    } else {
+        z[3] = 0.0f;
+        z[4] = 0.0f;
+        z[5] = 0.0f;
+    }
 
     // (z - H*xp)
     for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {

@@ -150,7 +150,7 @@ int main(void)
             accel[1] = (float) acce_y * 4.0f / 65536.0f;                    // g
             accel[2] = (float) acce_z * 4.0f / 65536.0f;                    // g
 
-            EKF_update(&ekf, euler_ekf, accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], 1, 0, 0, 0.005f);
+            EKF_update(&ekf, euler_ekf, accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], 0.0f, 0.0f, 0.0f, 0.005f, 0u);
             // Convert radians to degrees
             float roll_deg  = euler_ekf[0] * 180.0f / 3.14159265f;
             float pitch_deg = euler_ekf[1] * 180.0f / 3.14159265f;

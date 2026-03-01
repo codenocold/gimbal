@@ -34,7 +34,7 @@ typedef struct {
 
 void EKF_init(ekf_t* ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, float N_Q_bias, float N_P, float N_R);
 
-void EKF_update(ekf_t* ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt);
+void EKF_update(ekf_t* ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt, uint8_t use_mag);
 
 uint8_t inverse_matrix(float a[6][6], float a_inv[6][6]);
 

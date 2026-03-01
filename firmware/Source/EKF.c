@@ -8,12 +8,12 @@
 #include "EKF.h"
 #include "math.h"
 
-void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, float N_P, float N_R)
+void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, float N_Q_bias, float N_P, float N_R)
 {
     // Initialization:
     // Prediction error covariance matrix
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
             if (i == j) {
                 ekf->P[i][j] = N_P;
             } else {
@@ -23,10 +23,10 @@ void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, f
     }
 
     // Process noise covariance matrix
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
             if (i == j) {
-                ekf->Q[i][j] = N_Q;
+                ekf->Q[i][j] = (i < 4) ? N_Q : N_Q_bias;
             } else {
                 ekf->Q[i][j] = 0.0f;
             }
@@ -34,8 +34,8 @@ void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, f
     }
 
     // Measurement noise covariance matrix
-    for (uint8_t i = 0; i < 6; i++) {
-        for (uint8_t j = 0; j < 6; j++) {
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
             if (i == j) {
                 ekf->R[i][j] = N_R;
             } else {
@@ -48,6 +48,9 @@ void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, f
     ekf->x[1] = 0;
     ekf->x[2] = 0;
     ekf->x[3] = 0;
+    ekf->x[4] = 0;
+    ekf->x[5] = 0;
+    ekf->x[6] = 0;
 
     // Normalize Reference Magnetic Vector
     float M     = sqrtf(ref_mx * ref_mx + ref_my * ref_my + ref_mz * ref_mz);
@@ -59,138 +62,216 @@ void EKF_init(ekf_t *ekf, float ref_mx, float ref_my, float ref_mz, float N_Q, f
 void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float p, float q, float r, float mx, float my, float mz, float dt)
 {
     // Variable Definitions
-    float   F[4][4]; // Jacobian matrix of F
-    float   H[6][4]; // Jacobian matrix of H
-    float   FP[4][4];
-    float   FPFt[4][4];
-    float   HPp[6][4];
-    float   HPpHt[6][6];
-    float   PpHt[4][6];
-    float   S_inv[6][6];
-    float   Hxp[6];
-    float   z[6];
-    float   zmHxp[6];
-    float   KzmHxp[4];
-    float   KH[4][4];
-    float   KHPp[4][4];
+    float   F[EKF_STATE_DIM][EKF_STATE_DIM]; // Jacobian matrix of F
+    float   H[EKF_MEAS_DIM][EKF_STATE_DIM];  // Jacobian matrix of H
+    float   FP[EKF_STATE_DIM][EKF_STATE_DIM];
+    float   FPFt[EKF_STATE_DIM][EKF_STATE_DIM];
+    float   HPp[EKF_MEAS_DIM][EKF_STATE_DIM];
+    float   HPpHt[EKF_MEAS_DIM][EKF_MEAS_DIM];
+    float   PpHt[EKF_STATE_DIM][EKF_MEAS_DIM];
+    float   S_inv[EKF_MEAS_DIM][EKF_MEAS_DIM];
+    float   Hxp[EKF_MEAS_DIM];
+    float   z[EKF_MEAS_DIM];
+    float   zmHxp[EKF_MEAS_DIM];
+    float   KzmHxp[EKF_STATE_DIM];
+    float   KH[EKF_STATE_DIM][EKF_STATE_DIM];
+    float   KHPp[EKF_STATE_DIM][EKF_STATE_DIM];
     float   G;
     float   M;
+    float   q0;
+    float   q1;
+    float   q2;
+    float   q3;
+    float   bgx;
+    float   bgy;
+    float   bgz;
+    float   wx;
+    float   wy;
+    float   wz;
+    float   q_norm;
     uint8_t mat_error;
 
     // Normalization
-    G  = sqrtf(ax * ax + ay * ay + az * az);
-    M  = sqrtf(powf(mx, 2) + powf(my, 2) + powf(mz, 2));
-    ax = ax / G;
-    ay = ay / G;
-    az = az / G;
-    mx = mx / M;
-    my = my / M;
-    mz = mz / M;
+    G = sqrtf(ax * ax + ay * ay + az * az);
+    M = sqrtf(mx * mx + my * my + mz * mz);
+    if (G > 0.0f) {
+        ax = ax / G;
+        ay = ay / G;
+        az = az / G;
+    }
+    if (M > 0.0f) {
+        mx = mx / M;
+        my = my / M;
+        mz = mz / M;
+    }
+
+    q0  = ekf->x[0];
+    q1  = ekf->x[1];
+    q2  = ekf->x[2];
+    q3  = ekf->x[3];
+    bgx = ekf->x[4];
+    bgy = ekf->x[5];
+    bgz = ekf->x[6];
+
+    wx = p - bgx;
+    wy = q - bgy;
+    wz = r - bgz;
+
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            F[i][j] = (i == j) ? 1.0f : 0.0f;
+        }
+    }
 
     // Calculate the Jacobian matrix of F
-    F[0][0] = 1;
-    F[0][1] = -p * dt / 2;
-    F[0][2] = -q * dt / 2;
-    F[0][3] = -r * dt / 2;
+    F[0][1] = -wx * dt / 2;
+    F[0][2] = -wy * dt / 2;
+    F[0][3] = -wz * dt / 2;
+    F[0][4] = q1 * dt / 2;
+    F[0][5] = q2 * dt / 2;
+    F[0][6] = q3 * dt / 2;
 
-    F[1][0] = p * dt / 2;
-    F[1][1] = 1;
-    F[1][2] = r * dt / 2;
-    F[1][3] = -q * dt / 2;
+    F[1][0] = wx * dt / 2;
+    F[1][2] = wz * dt / 2;
+    F[1][3] = -wy * dt / 2;
+    F[1][4] = -q0 * dt / 2;
+    F[1][5] = q3 * dt / 2;
+    F[1][6] = -q2 * dt / 2;
 
-    F[2][0] = q * dt / 2;
-    F[2][1] = -r * dt / 2;
-    F[2][2] = 1;
-    F[2][3] = p * dt / 2;
+    F[2][0] = wy * dt / 2;
+    F[2][1] = -wz * dt / 2;
+    F[2][3] = wx * dt / 2;
+    F[2][4] = -q3 * dt / 2;
+    F[2][5] = -q0 * dt / 2;
+    F[2][6] = q1 * dt / 2;
 
-    F[3][0] = r * dt / 2;
-    F[3][1] = q * dt / 2;
-    F[3][2] = -p * dt / 2;
-    F[3][3] = 1;
+    F[3][0] = wz * dt / 2;
+    F[3][1] = wy * dt / 2;
+    F[3][2] = -wx * dt / 2;
+    F[3][4] = q2 * dt / 2;
+    F[3][5] = -q1 * dt / 2;
+    F[3][6] = -q0 * dt / 2;
 
     // Prediction of x
-    ekf->xp[0] = F[0][0] * ekf->x[0] + F[0][1] * ekf->x[1] + F[0][2] * ekf->x[2] + F[0][3] * ekf->x[3];
-    ekf->xp[1] = F[1][0] * ekf->x[0] + F[1][1] * ekf->x[1] + F[1][2] * ekf->x[2] + F[1][3] * ekf->x[3];
-    ekf->xp[2] = F[2][0] * ekf->x[0] + F[2][1] * ekf->x[1] + F[2][2] * ekf->x[2] + F[2][3] * ekf->x[3];
-    ekf->xp[3] = F[3][0] * ekf->x[0] + F[3][1] * ekf->x[1] + F[3][2] * ekf->x[2] + F[3][3] * ekf->x[3];
+    ekf->xp[0] = q0 + (-wx * q1 - wy * q2 - wz * q3) * dt / 2;
+    ekf->xp[1] = q1 + (wx * q0 + wz * q2 - wy * q3) * dt / 2;
+    ekf->xp[2] = q2 + (wy * q0 - wz * q1 + wx * q3) * dt / 2;
+    ekf->xp[3] = q3 + (wz * q0 + wy * q1 - wx * q2) * dt / 2;
+    ekf->xp[4] = bgx;
+    ekf->xp[5] = bgy;
+    ekf->xp[6] = bgz;
+
+    q_norm = sqrtf(ekf->xp[0] * ekf->xp[0] + ekf->xp[1] * ekf->xp[1] + ekf->xp[2] * ekf->xp[2] + ekf->xp[3] * ekf->xp[3]);
+    if (q_norm > 0.0f) {
+        ekf->xp[0] /= q_norm;
+        ekf->xp[1] /= q_norm;
+        ekf->xp[2] /= q_norm;
+        ekf->xp[3] /= q_norm;
+    }
 
     // Prediction of P
     /* Pp = F*P*F' + Q; */
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
-            FP[i][j] = F[i][0] * ekf->P[0][j] + F[i][1] * ekf->P[1][j] + F[i][2] * ekf->P[2][j] + F[i][3] * ekf->P[3][j];
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            FP[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_STATE_DIM; k++) {
+                FP[i][j] += F[i][k] * ekf->P[k][j];
+            }
         }
     }
 
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
-            FPFt[i][j] = FP[i][0] * F[j][0] + FP[i][1] * F[j][1] + FP[i][2] * F[j][2] + FP[i][3] * F[j][3];
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            FPFt[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_STATE_DIM; k++) {
+                FPFt[i][j] += FP[i][k] * F[j][k];
+            }
         }
     }
 
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
             ekf->Pp[i][j] = FPFt[i][j] + ekf->Q[i][j];
         }
     }
 
     // Calculate the Jacobian matrix of h
-    H[0][0] = -ekf->x[2];
-    H[0][1] = ekf->x[3];
-    H[0][2] = -ekf->x[0];
-    H[0][3] = ekf->x[1];
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            H[i][j] = 0.0f;
+        }
+    }
 
-    H[1][0] = ekf->x[1];
-    H[1][1] = ekf->x[0];
-    H[1][2] = ekf->x[3];
-    H[1][3] = ekf->x[2];
+    q0 = ekf->xp[0];
+    q1 = ekf->xp[1];
+    q2 = ekf->xp[2];
+    q3 = ekf->xp[3];
 
-    H[2][0] = ekf->x[0];
-    H[2][1] = -ekf->x[1];
-    H[2][2] = -ekf->x[2];
-    H[2][3] = ekf->x[3];
+    H[0][0] = -q2;
+    H[0][1] = q3;
+    H[0][2] = -q0;
+    H[0][3] = q1;
 
-    H[3][0] = ekf->x[0] * ekf->ref_mx + ekf->x[3] * ekf->ref_my - ekf->x[2] * ekf->ref_mz;
-    H[3][1] = ekf->x[1] * ekf->ref_mx + ekf->x[2] * ekf->ref_my + ekf->x[3] * ekf->ref_mz;
-    H[3][2] = -ekf->x[2] * ekf->ref_mx + ekf->x[1] * ekf->ref_my - ekf->x[0] * ekf->ref_mz;
-    H[3][3] = -ekf->x[3] * ekf->ref_mx + ekf->x[0] * ekf->ref_my + ekf->x[1] * ekf->ref_mz;
+    H[1][0] = q1;
+    H[1][1] = q0;
+    H[1][2] = q3;
+    H[1][3] = q2;
 
-    H[4][0] = -ekf->x[3] * ekf->ref_mx + ekf->x[0] * ekf->ref_my + ekf->x[1] * ekf->ref_mz;
-    H[4][1] = ekf->x[2] * ekf->ref_mx - ekf->x[1] * ekf->ref_my + ekf->x[0] * ekf->ref_mz;
-    H[4][2] = ekf->x[1] * ekf->ref_mx + ekf->x[2] * ekf->ref_my + ekf->x[3] * ekf->ref_mz;
-    H[4][3] = -ekf->x[0] * ekf->ref_mx - ekf->x[3] * ekf->ref_my + ekf->x[2] * ekf->ref_mz;
+    H[2][0] = q0;
+    H[2][1] = -q1;
+    H[2][2] = -q2;
+    H[2][3] = q3;
 
-    H[5][0] = ekf->x[2] * ekf->ref_mx - ekf->x[1] * ekf->ref_my + ekf->x[0] * ekf->ref_mz;
-    H[5][1] = ekf->x[3] * ekf->ref_mx - ekf->x[0] * ekf->ref_my - ekf->x[1] * ekf->ref_mz;
-    H[5][2] = ekf->x[0] * ekf->ref_mx + ekf->x[3] * ekf->ref_my - ekf->x[2] * ekf->ref_mz;
-    H[5][3] = ekf->x[1] * ekf->ref_mx + ekf->x[2] * ekf->ref_my + ekf->x[3] * ekf->ref_mz;
+    H[3][0] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
+    H[3][1] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
+    H[3][2] = -q2 * ekf->ref_mx + q1 * ekf->ref_my - q0 * ekf->ref_mz;
+    H[3][3] = -q3 * ekf->ref_mx + q0 * ekf->ref_my + q1 * ekf->ref_mz;
+
+    H[4][0] = -q3 * ekf->ref_mx + q0 * ekf->ref_my + q1 * ekf->ref_mz;
+    H[4][1] = q2 * ekf->ref_mx - q1 * ekf->ref_my + q0 * ekf->ref_mz;
+    H[4][2] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
+    H[4][3] = -q0 * ekf->ref_mx - q3 * ekf->ref_my + q2 * ekf->ref_mz;
+
+    H[5][0] = q2 * ekf->ref_mx - q1 * ekf->ref_my + q0 * ekf->ref_mz;
+    H[5][1] = q3 * ekf->ref_mx - q0 * ekf->ref_my - q1 * ekf->ref_mz;
+    H[5][2] = q0 * ekf->ref_mx + q3 * ekf->ref_my - q2 * ekf->ref_mz;
+    H[5][3] = q1 * ekf->ref_mx + q2 * ekf->ref_my + q3 * ekf->ref_mz;
 
     // S = (H*Pp*H' + R);
     // H*Pp
-    for (uint8_t i = 0; i < 6; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
-            HPp[i][j] = H[i][0] * ekf->Pp[0][j] + H[i][1] * ekf->Pp[1][j] + H[i][2] * ekf->Pp[2][j] + H[i][3] * ekf->Pp[3][j];
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            HPp[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_STATE_DIM; k++) {
+                HPp[i][j] += H[i][k] * ekf->Pp[k][j];
+            }
         }
     }
 
     // H*Pp*H'
-    for (uint8_t i = 0; i < 6; i++) {
-        for (uint8_t j = 0; j < 6; j++) {
-            HPpHt[i][j] = HPp[i][0] * H[j][0] + HPp[i][1] * H[j][1] + HPp[i][2] * H[j][2] + HPp[i][3] * H[j][3];
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
+            HPpHt[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_STATE_DIM; k++) {
+                HPpHt[i][j] += HPp[i][k] * H[j][k];
+            }
         }
     }
 
     // H*Pp*H' + R
-    for (uint8_t i = 0; i < 6; i++) {
-        for (uint8_t j = 0; j < 6; j++) {
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
             HPpHt[i][j] = HPpHt[i][j] + ekf->R[i][j]; // S
         }
     }
 
     // K = Pp*H'*(S.inverse);
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 6; j++) {
-            PpHt[i][j] = ekf->Pp[i][0] * H[j][0] + ekf->Pp[i][1] * H[j][1] + ekf->Pp[i][2] * H[j][2] + ekf->Pp[i][3] * H[j][3];
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
+            PpHt[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_STATE_DIM; k++) {
+                PpHt[i][j] += ekf->Pp[i][k] * H[j][k];
+            }
         }
     }
 
@@ -199,17 +280,22 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
         return;
     }
 
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 6; j++) {
-            ekf->K[i][j] = PpHt[i][0] * S_inv[0][j] + PpHt[i][1] * S_inv[1][j] + PpHt[i][2] * S_inv[2][j] + PpHt[i][3] * S_inv[3][j] + PpHt[i][4] * S_inv[4][j]
-                           + PpHt[i][5] * S_inv[5][j];
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
+            ekf->K[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_MEAS_DIM; k++) {
+                ekf->K[i][j] += PpHt[i][k] * S_inv[k][j];
+            }
         }
     }
 
     // x = xp + K*(z - H*xp);
     // H*xp
-    for (uint8_t i = 0; i < 6; i++) {
-        Hxp[i] = ekf->xp[0] * H[i][0] + ekf->xp[1] * H[i][1] + ekf->xp[2] * H[i][2] + ekf->xp[3] * H[i][3];
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
+        Hxp[i] = 0.0f;
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            Hxp[i] += ekf->xp[j] * H[i][j];
+        }
     }
 
     z[0] = ax;
@@ -220,41 +306,55 @@ void EKF_update(ekf_t *ekf, float euler[3], float ax, float ay, float az, float 
     z[5] = mz;
 
     // (z - H*xp)
-    for (uint8_t i = 0; i < 6; i++) {
+    for (uint8_t i = 0; i < EKF_MEAS_DIM; i++) {
         zmHxp[i] = (z[i] - Hxp[i]);
     }
 
     // K*(z - H*xp)
-    for (uint8_t i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
         KzmHxp[i] = 0;
-        for (uint8_t j = 0; j < 6; j++) {
+        for (uint8_t j = 0; j < EKF_MEAS_DIM; j++) {
             KzmHxp[i] += ekf->K[i][j] * zmHxp[j];
         }
     }
 
     // xp + K*(z - H*xp)
-    for (uint8_t i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
         ekf->x[i] = ekf->xp[i] + KzmHxp[i];
+    }
+
+    q_norm = sqrtf(ekf->x[0] * ekf->x[0] + ekf->x[1] * ekf->x[1] + ekf->x[2] * ekf->x[2] + ekf->x[3] * ekf->x[3]);
+    if (q_norm > 0.0f) {
+        ekf->x[0] /= q_norm;
+        ekf->x[1] /= q_norm;
+        ekf->x[2] /= q_norm;
+        ekf->x[3] /= q_norm;
     }
 
     // P = Pp - K*H*Pp;
     // K*H
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
-            KH[i][j] = ekf->K[i][0] * H[0][j] + ekf->K[i][1] * H[1][j] + ekf->K[i][2] * H[2][j] + ekf->K[i][3] * H[3][j] + ekf->K[i][4] * H[4][j] + ekf->K[i][5] * H[5][j];
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            KH[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_MEAS_DIM; k++) {
+                KH[i][j] += ekf->K[i][k] * H[k][j];
+            }
         }
     }
 
     // K*H*Pp
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
-            KHPp[i][j] = KH[i][0] * ekf->Pp[0][j] + KH[i][1] * ekf->Pp[1][j] + KH[i][2] * ekf->Pp[2][j] + KH[i][3] * ekf->Pp[3][j];
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
+            KHPp[i][j] = 0.0f;
+            for (uint8_t k = 0; k < EKF_STATE_DIM; k++) {
+                KHPp[i][j] += KH[i][k] * ekf->Pp[k][j];
+            }
         }
     }
 
     // P = Pp - K*H*Pp
-    for (uint8_t i = 0; i < 4; i++) {
-        for (uint8_t j = 0; j < 4; j++) {
+    for (uint8_t i = 0; i < EKF_STATE_DIM; i++) {
+        for (uint8_t j = 0; j < EKF_STATE_DIM; j++) {
             ekf->P[i][j] = ekf->Pp[i][j] - KHPp[i][j];
         }
     }

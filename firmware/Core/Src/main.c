@@ -110,7 +110,7 @@ int main(void)
     // In The Main Function:
     ekf_t ekf;
     float euler_ekf[3];
-    EKF_init(&ekf, 1, 0, 0, 0.1, 1, 100);
+    EKF_init(&ekf, 1, 0, 0, 0.1f, 0.0001f, 1.0f, 100.0f);
 
     // // Set AHRS settings
     // const FusionAhrsSettings settings = {
@@ -123,7 +123,8 @@ int main(void)
     // };
     // FusionAhrsSetSettings(&ahrs, &settings);
 
-    uint32_t tick = 0;
+    uint32_t tick            = 0;
+    uint32_t bias_print_tick = 0;
     while (1) {
         if (soc_get_ms_since(tick) >= 5) {
             tick = soc_get_tick();
@@ -156,6 +157,11 @@ int main(void)
             float yaw_deg   = euler_ekf[2] * 180.0f / 3.14159265f;
 
             DEBUG_PLOT(roll_deg, pitch_deg, yaw_deg);
+
+            if (soc_get_ms_since(bias_print_tick) >= 100) {
+                bias_print_tick = soc_get_tick();
+                DEBUG("gyro_bias(rad/s): %.5f %.5f %.5f\n", ekf.x[4], ekf.x[5], ekf.x[6]);
+            }
 
             // DEBUG("%d %d %d\n", (int) (euler.angle.roll * 1), (int) (euler.angle.pitch * 1), (int) (euler.angle.yaw * 1));
             // DEBUG("%d %d %d\n", (int) (earth.axis.x * 10), (int) (earth.axis.y * 10), (int) (earth.axis.z * 10));

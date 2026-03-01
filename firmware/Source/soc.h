@@ -19,8 +19,16 @@ extern "C" {
 /* Exported defines ---------------------------------------------------------- */
 #ifdef __DEBUG__
     // clang-format off
+    #include <stdio.h>
     #include "SEGGER_RTT.h"
-    #define DEBUG(format, ...) SEGGER_RTT_printf(0, format, ##__VA_ARGS__);
+    #define DEBUG(format, ...) do { \
+        char _debug_buffer[128]; \
+        int _debug_len = snprintf(_debug_buffer, sizeof(_debug_buffer), format, ##__VA_ARGS__); \
+        if (_debug_len > 0) { \
+            unsigned _write_len = (unsigned) ((_debug_len < (int) sizeof(_debug_buffer)) ? _debug_len : ((int) sizeof(_debug_buffer) - 1)); \
+            SEGGER_RTT_Write(0, _debug_buffer, _write_len); \
+        } \
+    } while (0)
     inline void DEBUG_PLOT(float f1, float f2, float f3) { float value[3] = {f1, f2, f3}; SEGGER_RTT_Write(1, &value, sizeof(value)); }
     // clang-format on
 #else
